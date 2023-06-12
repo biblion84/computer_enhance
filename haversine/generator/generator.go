@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"math"
+	"github.com/biblion84/computerEnhance/haversine/common"
 	"math/rand"
 	"os"
 	"path"
@@ -56,27 +56,6 @@ import (
 		total done in 4487 ms
 */
 
-func radianFromDegrees(degrees float64) float64 {
-	return degrees * 0.01745329251994329577
-}
-
-func square(a float64) float64 {
-	return a * a
-}
-
-func haversineDistance(x0, y0, x1, y1, radius float64) float64 {
-
-	dLat := radianFromDegrees(y1 - y0)
-	dLon := radianFromDegrees(x1 - x0)
-	lat1 := radianFromDegrees(y0)
-	lat2 := radianFromDegrees(y1)
-
-	a := square(math.Sin(dLat/2)) + math.Cos(lat1)*math.Cos(lat2)*square(math.Sin(dLon/2))
-	c := 2 * math.Asin(math.Sqrt(a))
-
-	return radius * c
-}
-
 type Pair struct {
 	X0 float64
 	Y0 float64
@@ -123,12 +102,12 @@ func main() {
 		os.Exit(0)
 	}
 
-	binaryFile, err := os.OpenFile(path.Join("data", "haversine.bin"), os.O_CREATE|os.O_TRUNC, 0o664)
+	binaryFile, err := os.OpenFile(path.Join("..", "data", "haversine.bin"), os.O_CREATE|os.O_TRUNC, 0o664)
 	if err != nil {
 		panic(err)
 	}
 
-	jsonFile, err := os.OpenFile(path.Join("data", "haversine.json"), os.O_CREATE|os.O_TRUNC, 0o664)
+	jsonFile, err := os.OpenFile(path.Join("..", "data", "haversine.json"), os.O_CREATE|os.O_TRUNC, 0o664)
 	if err != nil {
 		panic(err)
 	}
@@ -159,23 +138,20 @@ func main() {
 		pairs := make([]Pair, pairsToGenerate)
 		if clusterGeneration {
 			clusterNumber := srand.Intn(40) + 2
+			clusterReferences := make([]Pair, 0, clusterNumber)
+			for i := 0; i < clusterNumber; i++ {
+				clusterReferences = append(clusterReferences, Pair{
+					X0: float64((i * 72) % 180), Y0: float64((i * 72) % 180),
+					X1: float64((i * 123) % 360), Y1: float64((i * 123) % 360),
+				})
+			}
 			fmt.Printf("using cluster size of %d\n", clusterNumber)
-			for i := 0; i <= clusterNumber; i++ {
-				clusterReference := Pair{
-					X0: (srand.Float64() * 360) - 180, Y0: (srand.Float64() * 180) - 90,
-					X1: (srand.Float64() * 360) - 180, Y1: (srand.Float64() * 180) - 90,
+			for i := 0; i < pairsToGenerate; i++ {
+				ref := clusterReferences[i%clusterNumber]
+				pairs[i] = Pair{
+					X0: ref.X0 + ((srand.Float64() - 1.0) / 10), Y0: ref.Y0 + ((srand.Float64() - 1.0) / 10),
+					X1: ref.X1 + ((srand.Float64() - 1.0) / 10), Y1: ref.Y1 + ((srand.Float64() - 1.0) / 10),
 				}
-				toGenerate := pairsToGenerate / clusterNumber
-				if pairsToGenerate/clusterNumber == 0 {
-					toGenerate = pairsToGenerate % clusterNumber
-				}
-				for j := 0; j < toGenerate; j++ {
-					pairs[j*i] = Pair{
-						X0: clusterReference.X0 * srand.Float64(), Y0: clusterReference.Y0 * srand.Float64(),
-						X1: clusterReference.X1 * srand.Float64(), Y1: clusterReference.Y1 * srand.Float64(),
-					}
-				}
-
 			}
 		} else {
 			for i := 0; i < pairsToGenerate; i++ {
@@ -222,7 +198,7 @@ func main() {
 		timing(&s, fmt.Sprintf("iteration: %d formatting the floats to strings", outerBatch))
 
 		for i, pair := range pairsJsoned {
-			hd := haversineDistance(pairs[i].X0, pairs[i].Y0, pairs[i].X1, pairs[i].Y1, 6372.8)
+			hd := common.HaversineDistance(pairs[i].X0, pairs[i].Y0, pairs[i].X1, pairs[i].Y1, 6372.8)
 			p(binary.Write(outputBinary, binary.LittleEndian, hd))
 			haversineSum += hd
 			// do not put , on the first iteration
@@ -236,10 +212,9 @@ func main() {
 	}
 
 	p(binary.Write(outputBinary, binary.LittleEndian, haversineSum/float64(pairsQuantity)))
+	p(outputBinary.Flush())
 	pw(outputFile.WriteString("\n]}"))
-	if err := outputFile.Flush(); err != nil {
-		panic(err)
-	}
+	p(outputFile.Flush())
 
 	fmt.Printf("total done in %d ms\n", time.Since(start).Milliseconds())
 	fmt.Printf("haversine average: %f\n", haversineSum/float64(pairsQuantity))
