@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/rand"
@@ -97,35 +98,48 @@ func main() {
 	start := time.Now()
 	s := time.Now()
 
-	if len(os.Args) != 3 {
-		fmt.Printf("[seed] [number of coordinate pairs to generate]\n")
+	if len(os.Args) != 4 {
+		fmt.Printf("[uniform/cluster] [seed] [number of coordinate pairs to generate]\n")
 		os.Exit(0)
 	}
 
-	seed, err := strconv.Atoi(os.Args[1])
+	clusterGeneration := false
+	if strings.EqualFold(os.Args[1], "cluster") {
+		clusterGeneration = true
+	}
+
+	seed, err := strconv.Atoi(os.Args[2])
 	if err != nil {
-		fmt.Printf("could not convert the [seed] '%s' to a number\n", os.Args[1])
+		fmt.Printf("could not convert the [seed] '%s' to a number\n", os.Args[2])
 		os.Exit(0)
 	}
 
 	// seeded rand
 	srand := rand.New(rand.NewSource(int64(seed)))
 
-	pairsQuantity, err := strconv.Atoi(os.Args[2])
+	pairsQuantity, err := strconv.Atoi(os.Args[3])
 	if err != nil {
-		fmt.Printf("could not convert the [number of coordinate pairs to generate] '%s' to a number\n", os.Args[2])
+		fmt.Printf("could not convert the [number of coordinate pairs to generate] '%s' to a number\n", os.Args[3])
 		os.Exit(0)
 	}
 
-	file, err := os.OpenFile(path.Join("data", "haversine.json"), os.O_CREATE|os.O_TRUNC, 0o664)
+	binaryFile, err := os.OpenFile(path.Join("data", "haversine.bin"), os.O_CREATE|os.O_TRUNC, 0o664)
 	if err != nil {
 		panic(err)
 	}
 
-	outputFile := bufio.NewWriterSize(file, 4096*10)
+	jsonFile, err := os.OpenFile(path.Join("data", "haversine.json"), os.O_CREATE|os.O_TRUNC, 0o664)
+	if err != nil {
+		panic(err)
+	}
+
+	outputBinary := bufio.NewWriterSize(binaryFile, 4096*10)
+	outputFile := bufio.NewWriterSize(jsonFile, 4096*10)
 	if _, err := outputFile.WriteString("{\"pairs\":[\n"); err != nil {
 		panic(err)
 	}
+
+	haversineSum := float64(0)
 
 	outerBatchSize := pairsQuantity / 10
 	if outerBatchSize > MAX_BATCH_SIZE {
@@ -143,10 +157,32 @@ func main() {
 			pairsToGenerate = pairsQuantity % outerBatchSize
 		}
 		pairs := make([]Pair, pairsToGenerate)
-		for i := 0; i < pairsToGenerate; i++ {
-			pairs[i] = Pair{
-				X0: (srand.Float64() * 360) - 180, Y0: (srand.Float64() * 180) - 90,
-				X1: (srand.Float64() * 360) - 180, Y1: (srand.Float64() * 180) - 90,
+		if clusterGeneration {
+			clusterNumber := srand.Intn(40) + 2
+			fmt.Printf("using cluster size of %d\n", clusterNumber)
+			for i := 0; i <= clusterNumber; i++ {
+				clusterReference := Pair{
+					X0: (srand.Float64() * 360) - 180, Y0: (srand.Float64() * 180) - 90,
+					X1: (srand.Float64() * 360) - 180, Y1: (srand.Float64() * 180) - 90,
+				}
+				toGenerate := pairsToGenerate / clusterNumber
+				if pairsToGenerate/clusterNumber == 0 {
+					toGenerate = pairsToGenerate % clusterNumber
+				}
+				for j := 0; j < toGenerate; j++ {
+					pairs[j*i] = Pair{
+						X0: clusterReference.X0 * srand.Float64(), Y0: clusterReference.Y0 * srand.Float64(),
+						X1: clusterReference.X1 * srand.Float64(), Y1: clusterReference.Y1 * srand.Float64(),
+					}
+				}
+
+			}
+		} else {
+			for i := 0; i < pairsToGenerate; i++ {
+				pairs[i] = Pair{
+					X0: (srand.Float64() * 360) - 180, Y0: (srand.Float64() * 180) - 90,
+					X1: (srand.Float64() * 360) - 180, Y1: (srand.Float64() * 180) - 90,
+				}
 			}
 		}
 
@@ -185,27 +221,39 @@ func main() {
 
 		timing(&s, fmt.Sprintf("iteration: %d formatting the floats to strings", outerBatch))
 
-		for i, p := range pairsJsoned {
+		for i, pair := range pairsJsoned {
+			hd := haversineDistance(pairs[i].X0, pairs[i].Y0, pairs[i].X1, pairs[i].Y1, 6372.8)
+			p(binary.Write(outputBinary, binary.LittleEndian, hd))
+			haversineSum += hd
 			// do not put , on the first iteration
 			if outerBatch == 0 && i == 0 {
-				pw(outputFile.WriteString(p))
+				pw(outputFile.WriteString(pair))
 			} else {
-				pw(outputFile.WriteString(",\n" + p))
+				pw(outputFile.WriteString(",\n" + pair))
 			}
 		}
 		timing(&s, fmt.Sprintf("iteration: %d writing to output", outerBatch))
 	}
 
+	p(binary.Write(outputBinary, binary.LittleEndian, haversineSum/float64(pairsQuantity)))
 	pw(outputFile.WriteString("\n]}"))
 	if err := outputFile.Flush(); err != nil {
 		panic(err)
 	}
 
 	fmt.Printf("total done in %d ms\n", time.Since(start).Milliseconds())
+	fmt.Printf("haversine average: %f\n", haversineSum/float64(pairsQuantity))
+
 }
 
 // panic write
 func pw(_ int, err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func p(err error) {
 	if err != nil {
 		panic(err)
 	}
