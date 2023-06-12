@@ -9,11 +9,19 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 /*
-	Slower than the naive one.
+	faster than the naive one
+
+	limit 100_000_000 (oom)
+	at     10_000_000:
+		generating the pairs took 377 ms
+		formatting the floats to strings took 2453 ms
+		writing to output took 1390 ms
+		total done in 4221 ms
 */
 
 func radianFromDegrees(degrees float64) float64 {
@@ -73,7 +81,7 @@ func main() {
 	}
 
 	outputFile := bufio.NewWriterSize(file, 4096*10)
-	if _, err := outputFile.WriteString(`{"pairs":[`); err != nil {
+	if _, err := outputFile.WriteString("{\"pairs\":[\n"); err != nil {
 		panic(err)
 	}
 
@@ -91,15 +99,24 @@ func main() {
 		}
 	}
 
+	timing(&s, "generating the pairs")
+
 	pairsJsoned := make([]string, pairsQuantity)
 
 	batchSize := 32
-	for i := 0; i < pairsQuantity/batchSize; i++ {
+	wg := sync.WaitGroup{}
+	for i := 0; i <= pairsQuantity/batchSize; i++ {
+		wg.Add(1)
 		go func(i int) {
+			defer wg.Done()
 			for j := 0; j < batchSize; j++ {
+				// this combined with <= on the outer loop allow us to pick up the scraps
+				if i == pairsQuantity/batchSize && j >= pairsQuantity%batchSize {
+					break
+				}
 				index := j + (i * batchSize)
 				sb := strings.Builder{}
-				sb.WriteString(`{"X0":`)
+				sb.WriteString("\t{\"X0\":")
 				sb.WriteString(strconv.FormatFloat(pairs[index].X0, 'f', 10, 64))
 				sb.WriteString(`,"Y0":`)
 				sb.WriteString(strconv.FormatFloat(pairs[index].Y0, 'f', 10, 64))
@@ -112,24 +129,25 @@ func main() {
 			}
 		}(i)
 	}
+	wg.Wait()
 
-	timing(&s, "loop")
+	timing(&s, "formatting the floats to strings")
 
 	for i, p := range pairsJsoned {
-		pw(outputFile.WriteString(p))
-		if i == len(pairsJsoned)-1 {
-			pw(outputFile.WriteString("]}"))
+		if i != len(pairsJsoned)-1 {
+			pw(outputFile.WriteString(p + ",\n"))
+		} else {
+			pw(outputFile.WriteString(p + "\n]}"))
 			break
 		}
-		pw(outputFile.WriteString(","))
-
 	}
 
 	if err := outputFile.Flush(); err != nil {
 		panic(err)
 	}
+	timing(&s, "writing to output")
 
-	fmt.Printf("done in %d ms\n", time.Since(start).Milliseconds())
+	fmt.Printf("total done in %d ms\n", time.Since(start).Milliseconds())
 }
 
 // panic write
