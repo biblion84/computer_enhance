@@ -30,18 +30,13 @@ func main() {
 	var elapsedParsing time.Duration
 
 	sum := float64(0)
-	totalPairs := 0
 
-	// roughly ~100 bytes per pair
-	pairs := make([]models.Pair, 0, fileinfo.Size()/100_000/100)
+	pairs := []models.Pair{}
 
 	// first we try to find the first value
-	buffer := make([]byte, 4096*100)
+	buffer := make([]byte, 4096)
 
-	toRead := [4][]byte{}
-	for i := range toRead {
-		toRead[i] = make([]byte, 0, 21)
-	}
+	toRead := [4]string{}
 
 	nesting := 3
 	inString := false
@@ -74,7 +69,7 @@ func main() {
 					read := make([]float64, len(toRead))
 
 					for i, r := range toRead {
-						value, err := strconv.ParseFloat(string(r), 64)
+						value, err := strconv.ParseFloat(r, 64)
 						p(err)
 						read[i] = value
 					}
@@ -88,29 +83,25 @@ func main() {
 
 					pairs = append(pairs, pair)
 					sum += common.HaversineDistance(pair.X0, pair.Y0, pair.X1, pair.Y1, 6372.8)
-					totalPairs++
+					toRead = [4]string{}
 					elapsedParsing += time.Since(s)
 				}
 				currentlyReading = 0
-				for i := range toRead {
-					toRead[i] = toRead[i][:0]
-				}
 			}
 			if nesting != 0 {
 				continue
 			}
-			switch c {
-			case '"':
+			if c == '"' {
 				inString = !inString
-			case ':':
+			} else if c == ':' {
 				rightOfColumn = true
-			case ',':
+			} else if c == ',' {
 				rightOfColumn = false
 				currentlyReading++
 			}
 
 			if rightOfColumn && (c >= '0' && c <= '9' || c == '.' || c == '-') {
-				toRead[currentlyReading] = append(toRead[currentlyReading], c)
+				toRead[currentlyReading] += string(c)
 			}
 
 		}
