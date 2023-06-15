@@ -14,9 +14,14 @@ import (
 
 func main() {
 
+	filename := path.Join("data", "haversine.json")
+
 	start := time.Now()
 
-	file, err := os.Open(path.Join("data", "haversine.json"))
+	file, err := os.Open(filename)
+	p(err)
+
+	fileinfo, err := os.Stat(filename)
 	p(err)
 
 	// we only want to parse the haversine.json for the computer_enhance lesson
@@ -104,9 +109,11 @@ func main() {
 	}
 	fmt.Printf("time parsing %d ms\n", elapsedParsing.Milliseconds())
 
-	fmt.Printf("took %d ms\n", time.Since(start).Milliseconds())
-	fmt.Printf("haversine average : %f\n", sum/float64(len(pairs)))
+	timeElapsed := time.Since(start)
+	mbPerSecond := int(((float64(fileinfo.Size()) / 1_000_000.0) / float64(timeElapsed.Milliseconds())) * 1000)
 
+	fmt.Printf("took %d ms, %d MB/s\n", timeElapsed.Milliseconds(), mbPerSecond)
+	fmt.Printf("haversine average : %f\n", sum/float64(len(pairs)))
 }
 
 func p(err error) {

@@ -103,14 +103,11 @@ func main() {
 	}
 
 	binaryFile, err := os.OpenFile(path.Join("..", "data", "haversine.bin"), os.O_CREATE|os.O_TRUNC, 0o664)
-	if err != nil {
-		panic(err)
-	}
+	p(err)
 
-	jsonFile, err := os.OpenFile(path.Join("..", "data", "haversine.json"), os.O_CREATE|os.O_TRUNC, 0o664)
-	if err != nil {
-		panic(err)
-	}
+	jsonFilename := path.Join("..", "data", "haversine.json")
+	jsonFile, err := os.OpenFile(jsonFilename, os.O_CREATE|os.O_TRUNC, 0o664)
+	p(err)
 
 	outputBinary := bufio.NewWriterSize(binaryFile, 4096*10)
 	outputFile := bufio.NewWriterSize(jsonFile, 4096*10)
@@ -216,7 +213,12 @@ func main() {
 	pw(outputFile.WriteString("\n]}"))
 	p(outputFile.Flush())
 
-	fmt.Printf("total done in %d ms\n", time.Since(start).Milliseconds())
+	timeElapsed := time.Since(start)
+	jsonFileInfo, err := os.Stat(jsonFilename)
+	p(err)
+	mbPerSecond := int(((float64(jsonFileInfo.Size()) / 1_000_000.0) / float64(timeElapsed.Milliseconds())) * 1000)
+
+	fmt.Printf("total done in %d ms, %d MB/s\n", timeElapsed.Milliseconds(), mbPerSecond)
 	fmt.Printf("haversine average: %f\n", haversineSum/float64(pairsQuantity))
 
 }
