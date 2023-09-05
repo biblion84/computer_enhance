@@ -1,0 +1,11 @@
+Without profiling :
+total time:      64_290 µs       total cycles :  226_794_180     profiler called 0 times
+with :
+total time:      96_322 µs       total cycles :  328_414_264     profiler called 900_117 times
+using time.Now() instead of rdstcp:
+total time:      88_973 µs       profiler called 900_117 times
+
+
+The profiler is impeding a _lot_
+
+Can we make it quicker ?

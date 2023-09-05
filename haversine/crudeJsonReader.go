@@ -70,7 +70,7 @@ func main() {
 		}
 		timer.Profile("file.Read")
 
-		//timer.Profile("ifs")
+		timer.Profile("ifs")
 		for _, c := range buffer {
 			if c == '{' || c == '[' {
 				targetNesting--
@@ -85,11 +85,9 @@ func main() {
 					s := time.Now()
 					read := make([]float64, len(toRead))
 					for i, r := range toRead {
-						//timer.Profile("ifs")
-						//timer.Profile("parseFloat")
+						timer.Profile("parseFloat")
 						value, err := strconv.ParseFloat(string(r), 64)
-						//timer.Profile("parseFloat")
-						//timer.Profile("ifs")
+						timer.Profile("parseFloat")
 						p(err)
 						read[i] = value
 					}
@@ -127,7 +125,7 @@ func main() {
 				toRead[currentlyReading] = append(toRead[currentlyReading], c)
 			}
 		}
-		//timer.Profile("ifs")
+		timer.Profile("ifs")
 
 	}
 	timer.Profile("main loop")

@@ -10,16 +10,82 @@ import (
 
 func Rdtscp() int
 
+const MAX_LABELS = 128
+
 type RdtscTimer struct {
 	cyclesPerSecond int
-	runningTimers   map[string]int
-	timers          map[string]int
-	total           int
+
+	lastLabel int
+	labels    [MAX_LABELS]string
+
+	total int
+
+	currentProfile int
+	profiles       [MAX_LABELS]regionProfile
 
 	durationTimers        map[string]time.Duration
 	durationRunningTimers map[string]time.Time
 
 	called int
+}
+type regionProfile struct {
+	parentId     int
+	runningTimer int
+	timer        int
+}
+
+func Profile(timerName string) {
+	timer := Rdtscp()
+	profileId := t.getLabelIndex(timerName)
+	profile := t.profiles[profileId]
+
+	if profile.runningTimer == 0 {
+		profile.parentId = t.currentProfile
+		t.currentProfile = profileId
+
+		profile.runningTimer = timer
+		if profile.parentId != 0 {
+			parentProfile := t.profiles[profile.parentId]
+			parentProfile.Pause(timer)
+			t.profiles[profile.parentId] = parentProfile
+		}
+	} else {
+		t.currentProfile = profile.parentId
+		// mean we want to stop the profile
+		profile.timer += timer - profile.runningTimer
+		profile.runningTimer = 0
+		if profile.parentId != 0 {
+			parentProfile := t.profiles[profile.parentId]
+			parentProfile.UnPause(timer)
+			t.profiles[profile.parentId] = parentProfile
+		}
+	}
+
+	t.profiles[profileId] = profile
+	t.called++
+}
+
+func (p *regionProfile) Pause(rdtscp int) {
+	p.timer += rdtscp - p.runningTimer
+	p.runningTimer = 0
+}
+
+func (p *regionProfile) UnPause(rdtscp int) {
+	p.runningTimer = rdtscp
+}
+
+func (t *RdtscTimer) getLabelIndex(label string) int {
+	for i := 1; i <= t.lastLabel; i++ {
+		if t.labels[i] == label {
+			return i
+		}
+	}
+	t.lastLabel++
+	if t.lastLabel >= MAX_LABELS {
+		panic("profiler: reached the max label number")
+	}
+	t.labels[t.lastLabel] = label
+	return t.lastLabel
 }
 
 var t RdtscTimer
@@ -35,34 +101,13 @@ func init() {
 
 	t = RdtscTimer{
 		cyclesPerSecond:       (endRdtsc - startRdtsc) * secondDiviser,
-		runningTimers:         make(map[string]int, 100),
-		timers:                make(map[string]int, 100),
 		durationTimers:        make(map[string]time.Duration, 100),
 		durationRunningTimers: make(map[string]time.Time, 100),
 	}
 }
 
 const MEASURE_CYCLES = true
-
-func Profile(timerName string) {
-	t.called++
-	if MEASURE_CYCLES {
-		if t.runningTimers[timerName] != 0 {
-			t.timers[timerName] += Rdtscp() - t.runningTimers[timerName]
-			t.runningTimers[timerName] = 0
-		} else {
-			t.runningTimers[timerName] = Rdtscp()
-		}
-	} else {
-		if !t.durationRunningTimers[timerName].IsZero() {
-			t.durationTimers[timerName] += time.Since(t.durationRunningTimers[timerName])
-			t.durationRunningTimers[timerName] = time.Time{}
-		} else {
-			t.durationRunningTimers[timerName] = time.Now()
-		}
-	}
-
-}
+const PROFILE = true
 
 func Print() {
 
@@ -73,13 +118,13 @@ func Print() {
 	if MEASURE_CYCLES {
 		fmt.Fprintf(w, "total time: \t %s µs \t total cycles : \t %s \t profiler called %s times\n",
 			prettyPrint(t.cyclesToMicroSeconds(t.total)), prettyPrint(t.total), prettyPrint(t.called))
-		for k, v := range t.timers {
-			if k == "total" {
-				continue
-			}
-			percentOfTotal := (float64(v) / float64(t.total)) * 100
+		for i := 0; i < t.lastLabel; i++ {
+			label := t.labels[i]
+			profile := t.profiles[i]
+
+			percentOfTotal := (float64(profile.timer) / float64(t.total)) * 100
 			fmt.Fprintf(w, "%s: \t %s \t µs\t %s \t cycles \t %.2f %% \n",
-				k, prettyPrint(t.cyclesToMicroSeconds(v)), prettyPrint(v), percentOfTotal)
+				label, prettyPrint(t.cyclesToMicroSeconds(profile.timer)), prettyPrint(profile.timer), percentOfTotal)
 		}
 	} else {
 		fmt.Fprintf(w, "total time \t %s µs \t profiler called %s times\n",
