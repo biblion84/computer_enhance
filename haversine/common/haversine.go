@@ -1,6 +1,9 @@
 package common
 
-import "math"
+import (
+	"github.com/biblion84/computerEnhance/haversine/timer"
+	"math"
+)
 
 func radianFromDegrees(degrees float64) float64 {
 	return degrees * 0.01745329251994329577
@@ -11,6 +14,7 @@ func square(a float64) float64 {
 }
 
 func HaversineDistance(x0, y0, x1, y1, radius float64) float64 {
+	defer timer.TimeFunction("func: HaversineDistance")
 
 	dLat := radianFromDegrees(y1 - y0)
 	dLon := radianFromDegrees(x1 - x0)

@@ -1,0 +1,5 @@
+func main() {
+	content, err := io.ReadAll(file)
+}
+
+-> 600 MB/s
