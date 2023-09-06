@@ -14,7 +14,6 @@ import (
 )
 
 func main() {
-
 	timer.Begin()
 
 	filename := path.Join("data", "haversine.json")

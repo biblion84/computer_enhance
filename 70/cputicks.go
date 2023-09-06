@@ -20,17 +20,17 @@ func main() {
 
 	timer.Time("iterations")
 
+	overhead := 1<<63 - 1
 	for iteration := 0; iteration < ITERATIONS; iteration++ {
 		startTime := time.Now()
 		start := Rdtscp()
 
-		overhead := 1<<63 - 1
 		for i := 0; i < 3; i++ {
 			e := Rdtscp()
 			s := Rdtscp()
 
 			if e-s < overhead {
-				overhead = e - s
+				overhead = s - e
 			}
 		}
 
@@ -42,6 +42,8 @@ func main() {
 	}
 
 	timer.Time("iterations")
+
+	fmt.Printf("smallest rdtscp overhead : %d\n", overhead)
 
 	timesMax := int64(0)
 	timesMin := 1 << 62

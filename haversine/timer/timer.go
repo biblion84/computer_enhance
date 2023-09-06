@@ -10,6 +10,21 @@ import (
 
 func Rdtscp() int
 
+func BusySleep(duration time.Duration) {
+	cyclesToWait := int(duration.Seconds() * float64(t.cyclesPerSecond))
+	cyclesElapsed := 0
+	start := Rdtscp()
+	for {
+		end := Rdtscp()
+		cyclesElapsed += end - start
+
+		if cyclesElapsed >= cyclesToWait {
+			return
+		}
+		start = end
+	}
+}
+
 const MAX_LABELS = 128
 
 type RdtscTimer struct {
@@ -35,6 +50,9 @@ type regionProfile struct {
 }
 
 func Profile(timerName string) {
+	if !PROFILE {
+		return
+	}
 	timer := Rdtscp()
 	profileId := t.getLabelIndex(timerName)
 	profile := t.profiles[profileId]
@@ -118,7 +136,7 @@ func Print() {
 	if MEASURE_CYCLES {
 		fmt.Fprintf(w, "total time: \t %s µs \t total cycles : \t %s \t profiler called %s times\n",
 			prettyPrint(t.cyclesToMicroSeconds(t.total)), prettyPrint(t.total), prettyPrint(t.called))
-		for i := 0; i < t.lastLabel; i++ {
+		for i := 1; i <= t.lastLabel; i++ {
 			label := t.labels[i]
 			profile := t.profiles[i]
 
@@ -168,11 +186,11 @@ func prettyPrint(x int) string {
 }
 
 func Begin() {
-	Profile("total")
+	//Profile("total")
 	t.total = Rdtscp()
 }
 
 func End() {
-	Profile("total")
+	//Profile("total")
 	t.total = Rdtscp() - t.total
 }
