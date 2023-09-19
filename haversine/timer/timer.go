@@ -33,25 +33,31 @@ type RdtscTimer struct {
 	lastLabel int
 	labels    [MAX_LABELS]string
 
-	total int
-
+	// The profile currently being timed
+	// this allows a 'child' profile to know that it have a parent, see Profile
 	currentProfile int
 	profiles       [MAX_LABELS]regionProfile
 
-	durationTimers        map[string]time.Duration
-	durationRunningTimers map[string]time.Time
-
-	called int
+	called      int
+	totalCycles int
 }
 type regionProfile struct {
 	parentId     int
 	runningTimer int
 	timer        int
+
+	runningTimerWithChildren int
+	timerWithChildren        int
 }
+
+const PROFILE = true
 
 func Profile(timerName string) {
 	if !PROFILE {
 		return
+	}
+	if timerName == "main loop" {
+		fmt.Println("main loop")
 	}
 	timer := Rdtscp()
 	profileId := t.getLabelIndex(timerName)
@@ -62,15 +68,17 @@ func Profile(timerName string) {
 		t.currentProfile = profileId
 
 		profile.runningTimer = timer
+		profile.runningTimerWithChildren = timer
 		if profile.parentId != 0 {
 			parentProfile := t.profiles[profile.parentId]
 			parentProfile.Pause(timer)
 			t.profiles[profile.parentId] = parentProfile
 		}
 	} else {
-		t.currentProfile = profile.parentId
 		// mean we want to stop the profile
+		t.currentProfile = profile.parentId
 		profile.timer += timer - profile.runningTimer
+		profile.timerWithChildren += timer - profile.runningTimerWithChildren
 		profile.runningTimer = 0
 		if profile.parentId != 0 {
 			parentProfile := t.profiles[profile.parentId]
@@ -85,7 +93,6 @@ func Profile(timerName string) {
 
 func (p *regionProfile) Pause(rdtscp int) {
 	p.timer += rdtscp - p.runningTimer
-	p.runningTimer = 0
 }
 
 func (p *regionProfile) UnPause(rdtscp int) {
@@ -118,14 +125,9 @@ func init() {
 	endRdtsc := Rdtscp()
 
 	t = RdtscTimer{
-		cyclesPerSecond:       (endRdtsc - startRdtsc) * secondDiviser,
-		durationTimers:        make(map[string]time.Duration, 100),
-		durationRunningTimers: make(map[string]time.Time, 100),
+		cyclesPerSecond: (endRdtsc - startRdtsc) * secondDiviser,
 	}
 }
-
-const MEASURE_CYCLES = true
-const PROFILE = true
 
 func Print() {
 
@@ -133,28 +135,17 @@ func Print() {
 	w.Init(os.Stdout, 8, 8, 0, '\t', 0)
 	defer w.Flush()
 
-	if MEASURE_CYCLES {
-		fmt.Fprintf(w, "total time: \t %s µs \t total cycles : \t %s \t profiler called %s times\n",
-			prettyPrint(t.cyclesToMicroSeconds(t.total)), prettyPrint(t.total), prettyPrint(t.called))
-		for i := 1; i <= t.lastLabel; i++ {
-			label := t.labels[i]
-			profile := t.profiles[i]
+	fmt.Fprintf(w, "totalCycles time: \t %s µs \t totalCycles cycles : \t %s \t profiler called %s times\n",
+		prettyPrint(t.cyclesToMicroSeconds(t.totalCycles)), prettyPrint(t.totalCycles), prettyPrint(t.called))
+	for i := 1; i <= t.lastLabel; i++ {
+		label := t.labels[i]
+		profile := t.profiles[i]
 
-			percentOfTotal := (float64(profile.timer) / float64(t.total)) * 100
-			fmt.Fprintf(w, "%s: \t %s \t µs\t %s \t cycles \t %.2f %% \n",
-				label, prettyPrint(t.cyclesToMicroSeconds(profile.timer)), prettyPrint(profile.timer), percentOfTotal)
-		}
-	} else {
-		fmt.Fprintf(w, "total time \t %s µs \t profiler called %s times\n",
-			prettyPrint(int(t.durationTimers["total"].Microseconds())), prettyPrint(t.called))
-		for k, v := range t.durationTimers {
-			if k == "total" {
-				continue
-			}
-			percentOfTotal := (float64(v.Microseconds()) / float64(t.durationTimers["total"].Microseconds())) * 100
-			fmt.Fprintf(w, "%s: \t %s \t µs \t %.2f %% \n",
-				k, prettyPrint(int(v.Microseconds())), percentOfTotal)
-		}
+		percentOfTotal := (float64(profile.timer) / float64(t.totalCycles)) * 100
+		percentOfTotalWithChildren := (float64(profile.timerWithChildren) / float64(t.totalCycles)) * 100
+		fmt.Fprintf(w, "%s: \t %s \t µs\t %s \t cycles \t %.2f %% \t with children: %.2f %%  \n",
+			label, prettyPrint(t.cyclesToMicroSeconds(profile.timer)), prettyPrint(profile.timer),
+			percentOfTotal, percentOfTotalWithChildren)
 	}
 }
 
@@ -186,11 +177,9 @@ func prettyPrint(x int) string {
 }
 
 func Begin() {
-	//Profile("total")
-	t.total = Rdtscp()
+	t.totalCycles = Rdtscp()
 }
 
 func End() {
-	//Profile("total")
-	t.total = Rdtscp() - t.total
+	t.totalCycles = Rdtscp() - t.totalCycles
 }

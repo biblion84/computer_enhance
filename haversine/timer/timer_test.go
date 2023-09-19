@@ -31,6 +31,7 @@ func TestTimer(test *testing.T) {
 	// We're testing that the profiler is correctly handling recursive profiling
 	profileRecMicroseconds := t.cyclesToMicroSeconds(t.profiles[t.getLabelIndex("rec")].timer)
 	if profileRecMicroseconds < 19_800 || profileRecMicroseconds > 20_200 {
-		test.Error(fmt.Sprintf("the label 'rec' total time was not correct, got : %s", prettyPrint(profileRecMicroseconds)))
+		test.Error(fmt.Sprintf("the label 'rec' totalCycles time was not correct, got : %s", prettyPrint(profileRecMicroseconds)))
 	}
+	Print()
 }
