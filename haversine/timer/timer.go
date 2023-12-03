@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+const MEGABYTE = 1024 * 1024
+const GIGABYTE = MEGABYTE * 1024
+
 func Rdtscp() int
 
 func BusySleep(duration time.Duration) {
@@ -28,7 +31,8 @@ func BusySleep(duration time.Duration) {
 const MAX_LABELS = 128
 
 type RdtscTimer struct {
-	cyclesPerSecond int
+	pageFaultHandler PageFaultHandler
+	cyclesPerSecond  int
 
 	lastLabel int
 	labels    [MAX_LABELS]string
@@ -48,11 +52,15 @@ type regionProfile struct {
 
 	runningTimerWithChildren int
 	timerWithChildren        int
+	bytes                    int
+
+	runningPageFaults int
+	pageFaults        int
 }
 
 const PROFILE = true
 
-func Profile(timerName string) {
+func Profile(timerName string, bytes ...int) {
 	if !PROFILE {
 		return
 	}
@@ -60,6 +68,7 @@ func Profile(timerName string) {
 		fmt.Println("main loop")
 	}
 	timer := Rdtscp()
+	pageFaults := t.pageFaultHandler.GetPageFaults()
 	profileId := t.getLabelIndex(timerName)
 	profile := t.profiles[profileId]
 
@@ -67,36 +76,46 @@ func Profile(timerName string) {
 		profile.parentId = t.currentProfile
 		t.currentProfile = profileId
 
+		profile.runningPageFaults = pageFaults
 		profile.runningTimer = timer
 		profile.runningTimerWithChildren = timer
 		if profile.parentId != 0 {
 			parentProfile := t.profiles[profile.parentId]
-			parentProfile.Pause(timer)
+			parentProfile.Pause(timer, pageFaults)
 			t.profiles[profile.parentId] = parentProfile
 		}
 	} else {
 		// mean we want to stop the profile
 		t.currentProfile = profile.parentId
+		profile.pageFaults += pageFaults - profile.runningPageFaults
 		profile.timer += timer - profile.runningTimer
 		profile.timerWithChildren += timer - profile.runningTimerWithChildren
 		profile.runningTimer = 0
 		if profile.parentId != 0 {
 			parentProfile := t.profiles[profile.parentId]
-			parentProfile.UnPause(timer)
+			parentProfile.UnPause(timer, pageFaults)
 			t.profiles[profile.parentId] = parentProfile
 		}
 	}
 
+	processedBytes := 0
+	for _, b := range bytes {
+		processedBytes += b
+	}
+
+	profile.bytes += processedBytes
 	t.profiles[profileId] = profile
 	t.called++
 }
 
-func (p *regionProfile) Pause(rdtscp int) {
+func (p *regionProfile) Pause(rdtscp int, pageFaults int) {
 	p.timer += rdtscp - p.runningTimer
+	p.pageFaults += pageFaults - p.runningPageFaults
 }
 
-func (p *regionProfile) UnPause(rdtscp int) {
+func (p *regionProfile) UnPause(rdtscp int, pageFaults int) {
 	p.runningTimer = rdtscp
+	p.runningPageFaults = pageFaults
 }
 
 func (t *RdtscTimer) getLabelIndex(label string) int {
@@ -124,9 +143,16 @@ func init() {
 	}
 	endRdtsc := Rdtscp()
 
-	t = RdtscTimer{
-		cyclesPerSecond: (endRdtsc - startRdtsc) * secondDiviser,
+	pageFaultHandler, err := InitPageFaultHandler()
+	if err != nil {
+		panic(err)
 	}
+
+	t = RdtscTimer{
+		cyclesPerSecond:  (endRdtsc - startRdtsc) * secondDiviser,
+		pageFaultHandler: pageFaultHandler,
+	}
+
 }
 
 func Print() {
@@ -143,14 +169,36 @@ func Print() {
 
 		percentOfTotal := (float64(profile.timer) / float64(t.totalCycles)) * 100
 		percentOfTotalWithChildren := (float64(profile.timerWithChildren) / float64(t.totalCycles)) * 100
-		fmt.Fprintf(w, "%s: \t %s \t µs\t %s \t cycles \t %.2f %% \t with children: %.2f %%  \n",
-			label, prettyPrint(t.cyclesToMicroSeconds(profile.timer)), prettyPrint(profile.timer),
+
+		fmt.Fprintf(w, "%s: \t %s \t µs\t ", label, prettyPrint(t.cyclesToMicroSeconds(profile.timer)))
+		fmt.Fprintf(w, "%s \t cycles \t %.2f %% \t with children: %.2f %%\t", prettyPrint(profile.timer),
 			percentOfTotal, percentOfTotalWithChildren)
+
+		if profile.bytes > 0 {
+			seconds := t.cyclesToSeconds(profile.timer)
+			bytesPerSecond := float64(profile.bytes) / seconds
+
+			megabytes := float64(profile.bytes) / MEGABYTE
+			gigabytesPerSecond := bytesPerSecond / GIGABYTE
+
+			fmt.Fprintf(w, "%.3fmb at %.2fgb/s\t", megabytes, gigabytesPerSecond)
+
+		}
+
+		if profile.pageFaults > 0 {
+			fmt.Fprintf(w, "%d page faults\t", profile.pageFaults)
+		}
+
+		fmt.Fprintf(w, "\n")
 	}
 }
 
 func (t RdtscTimer) cyclesToMicroSeconds(cycles int) int {
 	return int((float64(cycles) / float64(t.cyclesPerSecond)) * 1_000_000)
+}
+
+func (t RdtscTimer) cyclesToSeconds(cycles int) float64 {
+	return float64(cycles) / float64(t.cyclesPerSecond)
 }
 
 func TimeFunction(callerName string) func() {

@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"time"
+	"unsafe"
 )
 
 func main() {
@@ -51,7 +52,7 @@ func main() {
 	rightOfColumn := false
 	// the value index that we're currently reading, because we're reading 4 floats (x0, y0, x1, y1) it can be 0 through 3
 	currentlyReading := 0
-	total := 0
+	totalPairs := 0
 	index := 0
 
 	timer.Profile("setup")
@@ -59,7 +60,7 @@ func main() {
 	timer.Profile("main loop")
 	for {
 		timer.Profile("file.Read")
-		_, err := file.Read(buffer)
+		bytesRead, err := file.Read(buffer)
 		if err != nil {
 			if errors.Is(io.EOF, err) {
 				break
@@ -67,7 +68,7 @@ func main() {
 				p(err)
 			}
 		}
-		timer.Profile("file.Read")
+		timer.Profile("file.Read", bytesRead)
 
 		timer.Profile("ifs")
 		for _, c := range buffer {
@@ -79,7 +80,7 @@ func main() {
 				targetNesting++
 				rightOfColumn = false
 				if currentlyReading == len(toRead)-1 {
-					total++
+					totalPairs++
 
 					s := time.Now()
 					read := make([]float64, len(toRead))
@@ -136,9 +137,9 @@ func main() {
 
 	// We over-allocated pairs, now bringing it back to the size it should have been
 	// but we didn't know how much elements were in the json, thus the estimation of the len above
-	pairs = pairs[:total]
+	pairs = pairs[:totalPairs]
 	haversineSum := float64(0)
-	timer.Profile("haversineDistance")
+	timer.Profile("haversineDistance", int(unsafe.Sizeof(models.Pair{}))*totalPairs)
 	for _, pair := range pairs {
 		haversineSum += common.HaversineDistance(pair.X0, pair.Y0, pair.X1, pair.Y1, 6372.8)
 	}

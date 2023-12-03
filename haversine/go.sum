@@ -1,2 +1,4 @@
 github.com/dterei/gotsc v0.0.0-20160722215413-e78f872945c6 h1:iD62k/20LzNdTc2bmrOTQ4xgRbI0uJvOxTkEAmd20eQ=
 github.com/dterei/gotsc v0.0.0-20160722215413-e78f872945c6/go.mod h1:P4N3xGqi52atrdlMBXpsAGTqRnLgZ8uDhlkQ7HEYGgo=
+golang.org/x/sys v0.15.0 h1:h48lPFYpsTvQJZF4EKyI4aLHaev3CxivZmv7yZig9pc=
+golang.org/x/sys v0.15.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
